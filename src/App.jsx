@@ -4,7 +4,7 @@ import getStroke from "perfect-freehand";
 
 const generator = rough.generator();
 
-const createElement = (id, x1, y1, x2, y2, type) => {
+const createElement = (id, x1, y1, x2, y2, type, strokeWidth, strokeColor) => {
   switch (type) {
     case "line":
     case "rectangle":
@@ -12,9 +12,9 @@ const createElement = (id, x1, y1, x2, y2, type) => {
         type === "line"
           ? generator.line(x1, y1, x2, y2)
           : generator.rectangle(x1, y1, x2 - x1, y2 - y1);
-      return { id, x1, y1, x2, y2, type, roughElement };
+      return { id, x1, y1, x2, y2, type, roughElement, strokeWidth, strokeColor };
     case "pencil":
-      return { id, type, points: [{ x: x1, y: y1 }] };
+      return { id, type, points: [{ x: x1, y: y1 }], strokeWidth, strokeColor }; // Store strokeColor here
     default:
       throw new Error(`Type not recognised: ${type}`);
   }
@@ -51,7 +51,9 @@ const positionWithinElement = (x, y, element) => {
       const betweenAnyPoint = element.points.some((point, index) => {
         const nextPoint = element.points[index + 1];
         if (!nextPoint) return false;
-        return onLine(point.x, point.y, nextPoint.x, nextPoint.y, x, y, 5) != null;
+        return (
+          onLine(point.x, point.y, nextPoint.x, nextPoint.y, x, y, 5) != null
+        );
       });
       return betweenAnyPoint ? "inside" : null;
     default:
@@ -59,15 +61,19 @@ const positionWithinElement = (x, y, element) => {
   }
 };
 
-const distance = (a, b) => Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
+const distance = (a, b) =>
+  Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
 
 const getElementAtPosition = (x, y, elements) => {
   return elements
-    .map(element => ({ ...element, position: positionWithinElement(x, y, element) }))
-    .find(element => element.position !== null);
+    .map((element) => ({
+      ...element,
+      position: positionWithinElement(x, y, element),
+    }))
+    .find((element) => element.position !== null);
 };
 
-const adjustElementCoordinates = element => {
+const adjustElementCoordinates = (element) => {
   const { type, x1, y1, x2, y2 } = element;
   if (type === "rectangle") {
     const minX = Math.min(x1, x2);
@@ -84,7 +90,7 @@ const adjustElementCoordinates = element => {
   }
 };
 
-const cursorForPosition = position => {
+const cursorForPosition = (position) => {
   switch (position) {
     case "tl":
     case "br":
@@ -117,12 +123,13 @@ const resizedCoordinates = (clientX, clientY, position, coordinates) => {
   }
 };
 
-const useHistory = initialState => {
+const useHistory = (initialState) => {
   const [index, setIndex] = useState(0);
   const [history, setHistory] = useState([initialState]);
 
   const setState = (action, overwrite = false) => {
-    const newState = typeof action === "function" ? action(history[index]) : action;
+    const newState =
+      typeof action === "function" ? action(history[index]) : action;
     if (overwrite) {
       const historyCopy = [...history];
       historyCopy[index] = newState;
@@ -130,17 +137,18 @@ const useHistory = initialState => {
     } else {
       const updatedState = [...history].slice(0, index + 1);
       setHistory([...updatedState, newState]);
-      setIndex(prevState => prevState + 1);
+      setIndex((prevState) => prevState + 1);
     }
   };
 
-  const undo = () => index > 0 && setIndex(prevState => prevState - 1);
-  const redo = () => index < history.length - 1 && setIndex(prevState => prevState + 1);
+  const undo = () => index > 0 && setIndex((prevState) => prevState - 1);
+  const redo = () =>
+    index < history.length - 1 && setIndex((prevState) => prevState + 1);
 
   return [history[index], setState, undo, redo];
 };
 
-const getSvgPathFromStroke = stroke => {
+const getSvgPathFromStroke = (stroke) => {
   if (!stroke.length) return "";
 
   const d = stroke.reduce(
@@ -156,41 +164,49 @@ const getSvgPathFromStroke = stroke => {
   return d.join(" ");
 };
 
-const drawElement = (roughCanvas, context, element) => {
-  switch (element.type) {
-    case "line":
-    case "rectangle":
-      roughCanvas.draw(element.roughElement);
-      break;
-    case "pencil":
-      const stroke = getSvgPathFromStroke(getStroke(element.points));
-      context.fill(new Path2D(stroke));
-      break;
-    default:
-      throw new Error(`Type not recognised: ${element.type}`);
-  }
-};
-
-const adjustmentRequired = type => ["line", "rectangle"].includes(type);
+const adjustmentRequired = (type) => ["line", "rectangle"].includes(type);
 
 const App = () => {
   const [elements, setElements, undo, redo] = useHistory([]);
   const [action, setAction] = useState("none");
   const [tool, setTool] = useState("pencil");
   const [selectedElement, setSelectedElement] = useState(null);
+  const [strokeWidth, setStrokeWidth] = useState(2);
+  const [strokeColor, setStrokeColor] = useState("#000000"); // Default to black
+
+  const drawElement = (roughCanvas, context, element) => {
+    context.fillStyle = element.strokeColor; // Set fill color from element
+    switch (element.type) {
+      case "line":
+      case "rectangle":
+        roughCanvas.draw(element.roughElement);
+        break;
+      case "pencil":
+        const stroke = getSvgPathFromStroke(
+          getStroke(element.points, { size: element.strokeWidth }) // Use element's strokeWidth
+        );
+        context.fill(new Path2D(stroke));
+        break;
+      default:
+        throw new Error(`Type not recognised: ${element.type}`);
+    }
+  };
+
+  const redrawCanvas = (roughCanvas, context) => {
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    elements.forEach((element) => drawElement(roughCanvas, context, element));
+  };
 
   useLayoutEffect(() => {
     const canvas = document.getElementById("canvas");
     const context = canvas.getContext("2d");
-    context.clearRect(0, 0, canvas.width, canvas.height);
-
     const roughCanvas = rough.canvas(canvas);
 
-    elements.forEach(element => drawElement(roughCanvas, context, element));
-  }, [elements]);
+    redrawCanvas(roughCanvas, context);
+  }, [elements]); // Update when elements change
 
   useEffect(() => {
-    const undoRedoFunction = event => {
+    const undoRedoFunction = (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "z") {
         if (event.shiftKey) {
           redo();
@@ -206,16 +222,19 @@ const App = () => {
     };
   }, [undo, redo]);
 
-  const updateElement = (id, x1, y1, x2, y2, type) => {
+  const updateElement = (id, x1, y1, x2, y2, type, color) => {
     const elementsCopy = [...elements];
 
     switch (type) {
       case "line":
       case "rectangle":
-        elementsCopy[id] = createElement(id, x1, y1, x2, y2, type);
+        elementsCopy[id] = createElement(id, x1, y1, x2, y2, type, strokeWidth, color);
         break;
       case "pencil":
-        elementsCopy[id].points = [...elementsCopy[id].points, { x: x2, y: y2 }];
+        elementsCopy[id].points = [
+          ...elementsCopy[id].points,
+          { x: x2, y: y2 },
+        ];
         break;
       default:
         throw new Error(`Type not recognised: ${type}`);
@@ -224,21 +243,21 @@ const App = () => {
     setElements(elementsCopy, true);
   };
 
-  const handleMouseDown = event => {
+  const handleMouseDown = (event) => {
     const { clientX, clientY } = event;
     if (tool === "selection") {
       const element = getElementAtPosition(clientX, clientY, elements);
       if (element) {
         if (element.type === "pencil") {
-          const xOffsets = element.points.map(point => clientX - point.x);
-          const yOffsets = element.points.map(point => clientY - point.y);
+          const xOffsets = element.points.map((point) => clientX - point.x);
+          const yOffsets = element.points.map((point) => clientY - point.y);
           setSelectedElement({ ...element, xOffsets, yOffsets });
         } else {
           const offsetX = clientX - element.x1;
           const offsetY = clientY - element.y1;
           setSelectedElement({ ...element, offsetX, offsetY });
         }
-        setElements(prevState => prevState);
+        setElements((prevState) => prevState);
 
         if (element.position === "inside") {
           setAction("moving");
@@ -248,20 +267,30 @@ const App = () => {
       }
     } else {
       const id = elements.length;
-      const element = createElement(id, clientX, clientY, clientX, clientY, tool);
-      setElements(prevState => [...prevState, element]);
+      const element = createElement(
+        id,
+        clientX,
+        clientY,
+        clientX,
+        clientY,
+        tool,
+        strokeWidth, // Pass strokeWidth here
+        strokeColor // Use the current strokeColor
+      );
+      setElements((prevState) => [...prevState, element]);
       setSelectedElement(element);
-
       setAction("drawing");
     }
   };
 
-  const handleMouseMove = event => {
+  const handleMouseMove = (event) => {
     const { clientX, clientY } = event;
 
     if (tool === "selection") {
       const element = getElementAtPosition(clientX, clientY, elements);
-      event.target.style.cursor = element ? cursorForPosition(element.position) : "default";
+      event.target.style.cursor = element
+        ? cursorForPosition(element.position)
+        : "default";
     }
 
     if (action === "drawing") {
@@ -290,7 +319,12 @@ const App = () => {
       }
     } else if (action === "resizing") {
       const { id, type, position, ...coordinates } = selectedElement;
-      const { x1, y1, x2, y2 } = resizedCoordinates(clientX, clientY, position, coordinates);
+      const { x1, y1, x2, y2 } = resizedCoordinates(
+        clientX,
+        clientY,
+        position,
+        coordinates
+      );
       updateElement(id, x1, y1, x2, y2, type);
     }
   };
@@ -299,7 +333,10 @@ const App = () => {
     if (selectedElement) {
       const index = selectedElement.id;
       const { id, type } = elements[index];
-      if ((action === "drawing" || action === "resizing") && adjustmentRequired(type)) {
+      if (
+        (action === "drawing" || action === "resizing") &&
+        adjustmentRequired(type)
+      ) {
         const { x1, y1, x2, y2 } = adjustElementCoordinates(elements[index]);
         updateElement(id, x1, y1, x2, y2, type);
       }
@@ -318,7 +355,12 @@ const App = () => {
           onChange={() => setTool("selection")}
         />
         <label htmlFor="selection">Selection</label>
-        <input type="radio" id="line" checked={tool === "line"} onChange={() => setTool("line")} />
+        <input
+          type="radio"
+          id="line"
+          checked={tool === "line"}
+          onChange={() => setTool("line")}
+        />
         <label htmlFor="line">Line</label>
         <input
           type="radio"
@@ -335,6 +377,22 @@ const App = () => {
         />
         <label htmlFor="pencil">Pencil</label>
       </div>
+      {tool === "pencil" && (
+        <div className="absolute top-20">
+          <input
+            type="range"
+            min={1}
+            max={20}
+            value={strokeWidth}
+            onChange={(e) => setStrokeWidth(e.target.valueAsNumber)}
+          />
+          <input
+            type="color"
+            value={strokeColor}
+            onChange={(e) => setStrokeColor(e.target.value)}
+          />
+        </div>
+      )}
       <div style={{ position: "fixed", bottom: 0, padding: 10 }}>
         <button onClick={undo}>Undo</button>
         <button onClick={redo}>Redo</button>
@@ -351,6 +409,6 @@ const App = () => {
       </canvas>
     </div>
   );
-}; 
+};
 
 export default App;
