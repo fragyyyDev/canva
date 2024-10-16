@@ -12,7 +12,17 @@ const createElement = (id, x1, y1, x2, y2, type, strokeWidth, strokeColor) => {
         type === "line"
           ? generator.line(x1, y1, x2, y2)
           : generator.rectangle(x1, y1, x2 - x1, y2 - y1);
-      return { id, x1, y1, x2, y2, type, roughElement, strokeWidth, strokeColor };
+      return {
+        id,
+        x1,
+        y1,
+        x2,
+        y2,
+        type,
+        roughElement,
+        strokeWidth,
+        strokeColor,
+      };
     case "pencil":
       return { id, type, points: [{ x: x1, y: y1 }], strokeWidth, strokeColor }; // Store strokeColor here
     default:
@@ -173,6 +183,14 @@ const App = () => {
   const [selectedElement, setSelectedElement] = useState(null);
   const [strokeWidth, setStrokeWidth] = useState(2);
   const [strokeColor, setStrokeColor] = useState("#000000"); // Default to black
+  const [offsetX, setOffsetX] = useState(0);
+  const [offsetY, setOffsetY] = useState(0);
+  const [startX, setStartX] = useState(0);
+  const [startY, setStartY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [canvas, setCanvas] = useState(null);
+  const [context, setContext] = useState(null);
+  const [roughCanvas, setRoughCanvas] = useState(null);
 
   const drawElement = (roughCanvas, context, element) => {
     context.fillStyle = element.strokeColor; // Set fill color from element
@@ -187,24 +205,36 @@ const App = () => {
         );
         context.fill(new Path2D(stroke));
         break;
+      case "drag":
+        console.log("dragging");
       default:
         throw new Error(`Type not recognised: ${element.type}`);
     }
   };
 
   const redrawCanvas = (roughCanvas, context) => {
+    if (!canvas || !context) return; // Add guard to ensure canvas is available
+
     context.clearRect(0, 0, canvas.width, canvas.height);
     elements.forEach((element) => drawElement(roughCanvas, context, element));
   };
 
   useLayoutEffect(() => {
-    const canvas = document.getElementById("canvas");
-    const context = canvas.getContext("2d");
-    const roughCanvas = rough.canvas(canvas);
+    const canvasElement = document.getElementById("canvas");
 
-    redrawCanvas(roughCanvas, context);
+    if (canvasElement) {
+      setCanvas(canvasElement);
+      const context = canvasElement.getContext("2d");
+      setContext(context);
+      const roughCanvasInstance = rough.canvas(canvasElement);
+      setRoughCanvas(roughCanvasInstance);
+
+      // Ensure the canvas and context exist before calling redrawCanvas
+      if (roughCanvasInstance && context) {
+        redrawCanvas(roughCanvasInstance, context);
+      }
+    }
   }, [elements]); // Update when elements change
-
   useEffect(() => {
     const undoRedoFunction = (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "z") {
@@ -228,7 +258,16 @@ const App = () => {
     switch (type) {
       case "line":
       case "rectangle":
-        elementsCopy[id] = createElement(id, x1, y1, x2, y2, type, strokeWidth, color);
+        elementsCopy[id] = createElement(
+          id,
+          x1,
+          y1,
+          x2,
+          y2,
+          type,
+          strokeWidth,
+          color
+        );
         break;
       case "pencil":
         elementsCopy[id].points = [
@@ -245,6 +284,18 @@ const App = () => {
 
   const handleMouseDown = (event) => {
     const { clientX, clientY } = event;
+    if (tool === "drag") {
+      // Start dragging: Set initial mouse position
+      setIsDragging(true);
+
+      // Store the initial mouse position relative to the canvas
+      setStartX(clientX);
+      setStartY(clientY);
+
+      // No need to update the initial offsets here, only store them
+      return;
+    }
+
     if (tool === "selection") {
       const element = getElementAtPosition(clientX, clientY, elements);
       if (element) {
@@ -291,6 +342,21 @@ const App = () => {
       event.target.style.cursor = element
         ? cursorForPosition(element.position)
         : "default";
+    } else if (tool === "drag" && isDragging === true) {
+      // Calculate the difference between the current mouse position and the start position
+      const dx = clientX - startX; // Difference in X from drag start
+      const dy = clientY - startY; // Difference in Y from drag start
+
+      // Update the canvas offsets based on the movement relative to initial drag start
+      setOffsetX((prevOffsetX) => prevOffsetX + dx);
+      setOffsetY((prevOffsetY) => prevOffsetY + dy);
+
+      // Update the start positions for the next movement
+      setStartX(clientX);
+      setStartY(clientY);
+
+      console.log(offsetX);
+      console.log(offsetY);
     }
 
     if (action === "drawing") {
@@ -341,10 +407,23 @@ const App = () => {
         updateElement(id, x1, y1, x2, y2, type);
       }
     }
+    setIsDragging(false);
     setAction("none");
     setSelectedElement(null);
   };
 
+  useEffect(() => {
+    if (context) {
+      // Reset the transformation matrix to the default
+      context.setTransform(1, 0, 0, 1, 0, 0);
+
+      // Apply the translation based on the offsets
+      context.translate(offsetX, offsetY);
+
+      // Redraw all the elements after applying the translation
+      redrawCanvas(roughCanvas, context);
+    }
+  }, [offsetX, offsetY, context, roughCanvas]);
   return (
     <div>
       <div style={{ position: "fixed" }}>
@@ -376,6 +455,13 @@ const App = () => {
           onChange={() => setTool("pencil")}
         />
         <label htmlFor="pencil">Pencil</label>
+        <input
+          type="radio"
+          id="drag"
+          checked={tool === "drag"}
+          onChange={() => setTool("drag")}
+        />
+        <label htmlFor="pencil">Drag</label>
       </div>
       {tool === "pencil" && (
         <div className="absolute top-20">
