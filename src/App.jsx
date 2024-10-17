@@ -233,6 +233,8 @@ const App = () => {
       if (roughCanvasInstance && context) {
         redrawCanvas(roughCanvasInstance, context);
       }
+      context.clearRect(0, 0, canvasElement.width, canvasElement.height)
+      context.save()
     }
   }, [elements]); // Update when elements change
   useEffect(() => {
@@ -282,17 +284,21 @@ const App = () => {
     setElements(elementsCopy, true);
   };
 
+  const getMouseCoordinates = (e) => {
+    const clientX = e.clientX - offsetX
+    const clientY = e.clientY - offsetY
+    return { clientX, clientY }
+  }
+
   const handleMouseDown = (event) => {
-    const { clientX, clientY } = event;
+    const { clientX, clientY } = getMouseCoordinates(event);
     if (tool === "drag") {
       // Start dragging: Set initial mouse position
       setIsDragging(true);
 
-      // Store the initial mouse position relative to the canvas
       setStartX(clientX);
       setStartY(clientY);
 
-      // No need to update the initial offsets here, only store them
       return;
     }
 
@@ -335,7 +341,7 @@ const App = () => {
   };
 
   const handleMouseMove = (event) => {
-    const { clientX, clientY } = event;
+    const { clientX, clientY } = getMouseCoordinates(event);
 
     if (tool === "selection") {
       const element = getElementAtPosition(clientX, clientY, elements);
@@ -425,44 +431,48 @@ const App = () => {
     }
   }, [offsetX, offsetY, context, roughCanvas]);
   return (
-    <div>
-      <div style={{ position: "fixed" }}>
-        <input
-          type="radio"
+    <div className="">
+      <div className="mt-2 fixed top-0 left-1/2 z-20 transform -translate-x-1/2 w-[60%] h-16 bg-[#575757] flex items-center justify-center gap-6 rounded-2xl">
+        <button
           id="selection"
-          checked={tool === "selection"}
-          onChange={() => setTool("selection")}
-        />
-        <label htmlFor="selection">Selection</label>
-        <input
-          type="radio"
+          className={`px-4 py-2 rounded-2xl  ${tool === "selection" ? "bg-blue-500 hover:bg-blue-500 text-white" : "bg-gray-300"} hover:bg-blue-300`}
+          onClick={() => setTool("selection")}
+        >
+          <img width="24" height="24" src="https://img.icons8.com/?size=100&id=83985&format=png&color=000000" alt="cursor" />        </button>
+
+        <button
           id="line"
-          checked={tool === "line"}
-          onChange={() => setTool("line")}
-        />
-        <label htmlFor="line">Line</label>
-        <input
-          type="radio"
+          className={`px-4 py-2 rounded-2xl ${tool === "line" ? "bg-blue-500 hover:bg-blue-500 text-white" : "bg-gray-300"} hover:bg-blue-300`}
+          onClick={() => setTool("line")}
+        >
+          Line
+        </button>
+
+        <button
           id="rectangle"
-          checked={tool === "rectangle"}
-          onChange={() => setTool("rectangle")}
-        />
-        <label htmlFor="rectangle">Rectangle</label>
-        <input
-          type="radio"
+          className={`px-4 py-2 rounded-2xl ${tool === "rectangle" ? "bg-blue-500 hover:bg-blue-500 text-white" : "bg-gray-300"} hover:bg-blue-300`}
+          onClick={() => setTool("rectangle")}
+        >
+          Rectangle
+        </button>
+
+        <button
           id="pencil"
-          checked={tool === "pencil"}
-          onChange={() => setTool("pencil")}
-        />
-        <label htmlFor="pencil">Pencil</label>
-        <input
-          type="radio"
+          className={`px-4 py-2 rounded-2xl ${tool === "pencil" ? "bg-blue-500 hover:bg-blue-500 text-white" : "bg-gray-300"} hover:bg-blue-300`}
+          onClick={() => setTool("pencil")}
+        >
+          Pencil
+        </button>
+
+        <button
           id="drag"
-          checked={tool === "drag"}
-          onChange={() => setTool("drag")}
-        />
-        <label htmlFor="pencil">Drag</label>
+          className={`px-4 py-2 rounded-2xl ${tool === "drag" ? "bg-blue-500 hover:bg-blue-500 text-white" : "bg-gray-300"} hover:bg-blue-300`}
+          onClick={() => setTool("drag")}
+        >
+          Drag
+        </button>
       </div>
+
       {tool === "pencil" && (
         <div className="absolute top-20">
           <input
@@ -479,12 +489,15 @@ const App = () => {
           />
         </div>
       )}
-      <div style={{ position: "fixed", bottom: 0, padding: 10 }}>
-        <button onClick={undo}>Undo</button>
-        <button onClick={redo}>Redo</button>
+
+
+      <div className="fixed bottom-0 p-6 flex gap-4">
+        <button onClick={undo} className="p-3 bg-[#575757] rounded-2xl text-white w-32">Undo</button>
+        <button onClick={redo} className="p-3 bg-[#575757] rounded-2xl text-white w-32">Redo</button>
       </div>
       <canvas
         id="canvas"
+        className="absolute z-10"
         width={window.innerWidth}
         height={window.innerHeight}
         onMouseDown={handleMouseDown}
