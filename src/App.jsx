@@ -233,8 +233,8 @@ const App = () => {
       if (roughCanvasInstance && context) {
         redrawCanvas(roughCanvasInstance, context);
       }
-      context.clearRect(0, 0, canvasElement.width, canvasElement.height)
-      context.save()
+      context.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      context.save();
     }
   }, [elements]); // Update when elements change
   useEffect(() => {
@@ -285,10 +285,11 @@ const App = () => {
   };
 
   const getMouseCoordinates = (e) => {
-    const clientX = e.clientX - offsetX
-    const clientY = e.clientY - offsetY
-    return { clientX, clientY }
-  }
+    const canvasBounds = canvas.getBoundingClientRect(); // Get canvas boundaries
+    const clientX = e.clientX - canvasBounds.left - offsetX; // Corrected clientX calculation with bounds and offset
+    const clientY = e.clientY - canvasBounds.top - offsetY; // Corrected clientY calculation with bounds and offset
+    return { clientX, clientY };
+  };
 
   const handleMouseDown = (event) => {
     const { clientX, clientY } = getMouseCoordinates(event);
@@ -349,20 +350,18 @@ const App = () => {
         ? cursorForPosition(element.position)
         : "default";
     } else if (tool === "drag" && isDragging === true) {
-      // Calculate the difference between the current mouse position and the start position
-      const dx = clientX - startX; // Difference in X from drag start
-      const dy = clientY - startY; // Difference in Y from drag start
+      const dx = clientX - startX;
+      const dy = clientY - startY;
 
-      // Update the canvas offsets based on the movement relative to initial drag start
+      // Update offsets to allow smooth panning
       setOffsetX((prevOffsetX) => prevOffsetX + dx);
       setOffsetY((prevOffsetY) => prevOffsetY + dy);
 
-      // Update the start positions for the next movement
       setStartX(clientX);
       setStartY(clientY);
 
-      console.log(offsetX);
-      console.log(offsetY);
+      // Prevent drawing while panning
+      return;
     }
 
     if (action === "drawing") {
@@ -413,6 +412,8 @@ const App = () => {
         updateElement(id, x1, y1, x2, y2, type);
       }
     }
+
+    // Stop dragging
     setIsDragging(false);
     setAction("none");
     setSelectedElement(null);
@@ -420,29 +421,44 @@ const App = () => {
 
   useEffect(() => {
     if (context) {
-      // Reset the transformation matrix to the default
-      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas before applying transformations
+      context.save(); // Save the current context state
 
-      // Apply the translation based on the offsets
-      context.translate(offsetX, offsetY);
+      context.setTransform(1, 0, 0, 1, 0, 0); // Reset transformations to the default
+      context.translate(offsetX, offsetY); // Apply translation for dragging
 
-      // Redraw all the elements after applying the translation
-      redrawCanvas(roughCanvas, context);
+      redrawCanvas(roughCanvas, context); // Redraw the elements with the correct transformations
+
+      context.restore(); // Restore the context to its previous state
     }
-  }, [offsetX, offsetY, context, roughCanvas]);
+  }, [offsetX, offsetY, elements, context, roughCanvas]);
   return (
     <div className="">
       <div className="mt-2 fixed top-0 left-1/2 z-20 transform -translate-x-1/2 w-[60%] h-16 bg-[#575757] flex items-center justify-center gap-6 rounded-2xl">
         <button
           id="selection"
-          className={`px-4 py-2 rounded-2xl  ${tool === "selection" ? "bg-blue-500 hover:bg-blue-500 text-white" : "bg-gray-300"} hover:bg-blue-300`}
+          className={`px-4 py-2 rounded-2xl  ${
+            tool === "selection"
+              ? "bg-blue-500 hover:bg-blue-500 text-white"
+              : "bg-gray-300"
+          } hover:bg-blue-300`}
           onClick={() => setTool("selection")}
         >
-          <img width="24" height="24" src="https://img.icons8.com/?size=100&id=83985&format=png&color=000000" alt="cursor" />        </button>
+          <img
+            width="24"
+            height="24"
+            src="https://img.icons8.com/?size=100&id=83985&format=png&color=000000"
+            alt="cursor"
+          />{" "}
+        </button>
 
         <button
           id="line"
-          className={`px-4 py-2 rounded-2xl ${tool === "line" ? "bg-blue-500 hover:bg-blue-500 text-white" : "bg-gray-300"} hover:bg-blue-300`}
+          className={`px-4 py-2 rounded-2xl ${
+            tool === "line"
+              ? "bg-blue-500 hover:bg-blue-500 text-white"
+              : "bg-gray-300"
+          } hover:bg-blue-300`}
           onClick={() => setTool("line")}
         >
           Line
@@ -450,7 +466,11 @@ const App = () => {
 
         <button
           id="rectangle"
-          className={`px-4 py-2 rounded-2xl ${tool === "rectangle" ? "bg-blue-500 hover:bg-blue-500 text-white" : "bg-gray-300"} hover:bg-blue-300`}
+          className={`px-4 py-2 rounded-2xl ${
+            tool === "rectangle"
+              ? "bg-blue-500 hover:bg-blue-500 text-white"
+              : "bg-gray-300"
+          } hover:bg-blue-300`}
           onClick={() => setTool("rectangle")}
         >
           Rectangle
@@ -458,7 +478,11 @@ const App = () => {
 
         <button
           id="pencil"
-          className={`px-4 py-2 rounded-2xl ${tool === "pencil" ? "bg-blue-500 hover:bg-blue-500 text-white" : "bg-gray-300"} hover:bg-blue-300`}
+          className={`px-4 py-2 rounded-2xl ${
+            tool === "pencil"
+              ? "bg-blue-500 hover:bg-blue-500 text-white"
+              : "bg-gray-300"
+          } hover:bg-blue-300`}
           onClick={() => setTool("pencil")}
         >
           Pencil
@@ -466,7 +490,11 @@ const App = () => {
 
         <button
           id="drag"
-          className={`px-4 py-2 rounded-2xl ${tool === "drag" ? "bg-blue-500 hover:bg-blue-500 text-white" : "bg-gray-300"} hover:bg-blue-300`}
+          className={`px-4 py-2 rounded-2xl ${
+            tool === "drag"
+              ? "bg-blue-500 hover:bg-blue-500 text-white"
+              : "bg-gray-300"
+          } hover:bg-blue-300`}
           onClick={() => setTool("drag")}
         >
           Drag
@@ -474,7 +502,7 @@ const App = () => {
       </div>
 
       {tool === "pencil" && (
-        <div className="absolute top-20">
+        <div className="absolute top-20 z-20">
           <input
             type="range"
             min={1}
@@ -490,14 +518,23 @@ const App = () => {
         </div>
       )}
 
-
       <div className="fixed bottom-0 p-6 flex gap-4">
-        <button onClick={undo} className="p-3 bg-[#575757] rounded-2xl text-white w-32">Undo</button>
-        <button onClick={redo} className="p-3 bg-[#575757] rounded-2xl text-white w-32">Redo</button>
+        <button
+          onClick={undo}
+          className="p-3 bg-[#575757] rounded-2xl text-white w-32"
+        >
+          Undo
+        </button>
+        <button
+          onClick={redo}
+          className="p-3 bg-[#575757] rounded-2xl text-white w-32"
+        >
+          Redo
+        </button>
       </div>
       <canvas
         id="canvas"
-        className="absolute z-10"
+        className="absolute z-10 min-w-screen min-h-screen"
         width={window.innerWidth}
         height={window.innerHeight}
         onMouseDown={handleMouseDown}
