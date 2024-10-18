@@ -4,7 +4,17 @@ import getStroke from "perfect-freehand";
 
 const generator = rough.generator();
 
-const createElement = (id, x1, y1, x2, y2, type, strokeWidth, strokeColor) => {
+const createElement = (
+  id,
+  x1,
+  y1,
+  x2,
+  y2,
+  type,
+  strokeWidth,
+  strokeColor,
+  rotation = 0
+) => {
   switch (type) {
     case "line":
     case "rectangle":
@@ -22,9 +32,10 @@ const createElement = (id, x1, y1, x2, y2, type, strokeWidth, strokeColor) => {
         roughElement,
         strokeWidth,
         strokeColor,
+        rotation, // Add rotation property
       };
     case "pencil":
-      return { id, type, points: [{ x: x1, y: y1 }], strokeWidth, strokeColor }; // Store strokeColor here
+      return { id, type, points: [{ x: x1, y: y1 }], strokeWidth, strokeColor };
     default:
       throw new Error(`Type not recognised: ${type}`);
   }
@@ -51,12 +62,30 @@ const positionWithinElement = (x, y, element) => {
       const end = nearPoint(x, y, x2, y2, "end");
       return start || end || on;
     case "rectangle":
+      // Resize handles (same as before)
       const topLeft = nearPoint(x, y, x1, y1, "tl");
       const topRight = nearPoint(x, y, x2, y1, "tr");
       const bottomLeft = nearPoint(x, y, x1, y2, "bl");
       const bottomRight = nearPoint(x, y, x2, y2, "br");
+
+      // Rotation handles placed slightly outside corners
+      const rotateTopRight = nearPoint(x, y, x2 + 5, y1 - 5, "rotate-tr");
+      const rotateBottomLeft = nearPoint(x, y, x1 - 5, y2 + 5, "rotate-bl");
+      const rotateBottomRight = nearPoint(x, y, x2 + 5, y2 + 5, "rotate-br");
+      const rotateTopLeft = nearPoint(x, y, x1 - 5, y1 - 5, "rotate-tl");
+
       const inside = x >= x1 && x <= x2 && y >= y1 && y <= y2 ? "inside" : null;
-      return topLeft || topRight || bottomLeft || bottomRight || inside;
+      return (
+        topLeft ||
+        topRight ||
+        bottomLeft ||
+        bottomRight ||
+        rotateTopRight ||
+        rotateBottomLeft ||
+        rotateBottomRight ||
+        rotateTopLeft ||
+        inside
+      );
     case "pencil":
       const betweenAnyPoint = element.points.some((point, index) => {
         const nextPoint = element.points[index + 1];
@@ -110,13 +139,39 @@ const cursorForPosition = (position) => {
     case "tr":
     case "bl":
       return "nesw-resize";
+    case "rotate-tr":
+    case "rotate-bl":
+    case "rotate-br":
+    case "rotate-tl":
+      return "alias"; // Custom rotate cursor
     default:
       return "move";
   }
 };
-
-const resizedCoordinates = (clientX, clientY, position, coordinates) => {
+const resizedCoordinates = (
+  clientX,
+  clientY,
+  position,
+  coordinates,
+  rotation = 0
+) => {
   const { x1, y1, x2, y2 } = coordinates;
+
+  // Create a function to rotate the point around the center
+  const rotatePoint = (cx, cy, angle, x, y) => {
+    const rad = (angle * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    return {
+      x: cos * (x - cx) - sin * (y - cy) + cx,
+      y: sin * (x - cx) + cos * (y - cy) + cy,
+    };
+  };
+
+  // Get the center of the element
+  const centerX = (x1 + x2) / 2;
+  const centerY = (y1 + y2) / 2;
+
   switch (position) {
     case "tl":
     case "start":
@@ -193,7 +248,17 @@ const App = () => {
   const [roughCanvas, setRoughCanvas] = useState(null);
 
   const drawElement = (roughCanvas, context, element) => {
-    context.fillStyle = element.strokeColor; // Set fill color from element
+    context.save();
+
+    if (element.rotation) {
+      // Translate to the center of the element
+      const centerX = (element.x1 + element.x2) / 2;
+      const centerY = (element.y1 + element.y2) / 2;
+      context.translate(centerX, centerY);
+      context.rotate((element.rotation * Math.PI) / 180); // Rotate the context
+      context.translate(-centerX, -centerY); // Translate back
+    }
+
     switch (element.type) {
       case "line":
       case "rectangle":
@@ -201,15 +266,15 @@ const App = () => {
         break;
       case "pencil":
         const stroke = getSvgPathFromStroke(
-          getStroke(element.points, { size: element.strokeWidth }) // Use element's strokeWidth
+          getStroke(element.points, { size: element.strokeWidth })
         );
         context.fill(new Path2D(stroke));
         break;
-      case "drag":
-        console.log("dragging");
       default:
         throw new Error(`Type not recognised: ${element.type}`);
     }
+
+    context.restore();
   };
 
   const redrawCanvas = (roughCanvas, context) => {
@@ -254,7 +319,7 @@ const App = () => {
     };
   }, [undo, redo]);
 
-  const updateElement = (id, x1, y1, x2, y2, type, color) => {
+  const updateElement = (id, x1, y1, x2, y2, type, color, rotation) => {
     const elementsCopy = [...elements];
 
     switch (type) {
@@ -268,7 +333,8 @@ const App = () => {
           y2,
           type,
           strokeWidth,
-          color
+          color,
+          rotation // Include rotation here
         );
         break;
       case "pencil":
@@ -293,37 +359,49 @@ const App = () => {
 
   const handleMouseDown = (event) => {
     const { clientX, clientY } = getMouseCoordinates(event);
-    if (tool === "drag") {
-      // Start dragging: Set initial mouse position
-      setIsDragging(true);
 
+    // Dragging functionality
+    if (tool === "drag") {
+      setIsDragging(true);
       setStartX(clientX);
       setStartY(clientY);
-
       return;
     }
 
+    // Selection, Moving, Resizing, and Rotating
     if (tool === "selection") {
       const element = getElementAtPosition(clientX, clientY, elements);
+
       if (element) {
-        if (element.type === "pencil") {
+        // Check for rotation handles
+        if (element.position && element.position.startsWith("rotate")) {
+          // Correctly identify rotation
+          setSelectedElement(element);
+          setAction("rotating");
+        } else if (element.type === "pencil") {
+          // Logic for moving pencil points
           const xOffsets = element.points.map((point) => clientX - point.x);
           const yOffsets = element.points.map((point) => clientY - point.y);
           setSelectedElement({ ...element, xOffsets, yOffsets });
+          setAction("moving");
         } else {
+          // Standard move/resize for other element types
           const offsetX = clientX - element.x1;
           const offsetY = clientY - element.y1;
           setSelectedElement({ ...element, offsetX, offsetY });
-        }
-        setElements((prevState) => prevState);
 
-        if (element.position === "inside") {
-          setAction("moving");
-        } else {
-          setAction("resizing");
+          if (element.position === "inside") {
+            setAction("moving");
+          } else {
+            setAction("resizing"); // Ensure this is only triggered for resize handles
+          }
         }
+
+        // Update the elements state
+        setElements((prevState) => prevState);
       }
     } else {
+      // Drawing new element logic
       const id = elements.length;
       const element = createElement(
         id,
@@ -332,8 +410,8 @@ const App = () => {
         clientX,
         clientY,
         tool,
-        strokeWidth, // Pass strokeWidth here
-        strokeColor // Use the current strokeColor
+        strokeWidth,
+        strokeColor
       );
       setElements((prevState) => [...prevState, element]);
       setSelectedElement(element);
@@ -349,52 +427,62 @@ const App = () => {
       event.target.style.cursor = element
         ? cursorForPosition(element.position)
         : "default";
-    } else if (tool === "drag" && isDragging === true) {
+    } else if (tool === "drag" && isDragging) {
       const dx = clientX - startX;
       const dy = clientY - startY;
 
-      // Update offsets to allow smooth panning
       setOffsetX((prevOffsetX) => prevOffsetX + dx);
       setOffsetY((prevOffsetY) => prevOffsetY + dy);
 
       setStartX(clientX);
       setStartY(clientY);
-
-      // Prevent drawing while panning
       return;
     }
 
+    // ROTATION HANDLING
+    if (action === "rotating" && selectedElement) {
+      const { x1, y1, x2, y2 } = selectedElement;
+
+      // Get the center of the element
+      const centerX = (x1 + x2) / 2;
+      const centerY = (y1 + y2) / 2;
+
+      // Calculate the angle between the center and the mouse position
+      const angle =
+        Math.atan2(clientY - centerY, clientX - centerX) * (180 / Math.PI);
+
+      // Update the element's rotation property
+      const elementsCopy = [...elements];
+      elementsCopy[selectedElement.id].rotation = angle;
+      setElements(elementsCopy, true);
+
+      return;
+    }
+
+    // Existing move and resize logic
     if (action === "drawing") {
       const index = elements.length - 1;
       const { x1, y1 } = elements[index];
       updateElement(index, x1, y1, clientX, clientY, tool);
     } else if (action === "moving") {
-      if (selectedElement.type === "pencil") {
-        const newPoints = selectedElement.points.map((_, index) => ({
-          x: clientX - selectedElement.xOffsets[index],
-          y: clientY - selectedElement.yOffsets[index],
-        }));
-        const elementsCopy = [...elements];
-        elementsCopy[selectedElement.id] = {
-          ...elementsCopy[selectedElement.id],
-          points: newPoints,
-        };
-        setElements(elementsCopy, true);
-      } else {
-        const { id, x1, x2, y1, y2, type, offsetX, offsetY } = selectedElement;
-        const width = x2 - x1;
-        const height = y2 - y1;
-        const newX1 = clientX - offsetX;
-        const newY1 = clientY - offsetY;
-        updateElement(id, newX1, newY1, newX1 + width, newY1 + height, type);
-      }
+      const { id, x1, x2, y1, y2, type, offsetX, offsetY, rotation } = selectedElement;
+      const width = x2 - x1;
+      const height = y2 - y1;
+      const newX1 = clientX - offsetX;
+      const newY1 = clientY - offsetY;
+    
+      // Adjust for rotation when moving
+      updateElement(id, newX1, newY1, newX1 + width, newY1 + height, type, strokeColor, rotation); // Include rotation
+    
+    
     } else if (action === "resizing") {
       const { id, type, position, ...coordinates } = selectedElement;
       const { x1, y1, x2, y2 } = resizedCoordinates(
         clientX,
         clientY,
         position,
-        coordinates
+        coordinates,
+        selectedElement.rotation
       );
       updateElement(id, x1, y1, x2, y2, type);
     }
