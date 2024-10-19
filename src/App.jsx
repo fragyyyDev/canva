@@ -422,12 +422,16 @@ const App = () => {
   const handleMouseMove = (event) => {
     const { clientX, clientY } = getMouseCoordinates(event);
 
+    // Handle cursor style for selection tool
     if (tool === "selection") {
       const element = getElementAtPosition(clientX, clientY, elements);
       event.target.style.cursor = element
         ? cursorForPosition(element.position)
         : "default";
-    } else if (tool === "drag" && isDragging) {
+    }
+
+    // Handle dragging for panning or element movement
+    else if (tool === "drag" && isDragging) {
       const dx = clientX - startX;
       const dy = clientY - startY;
 
@@ -439,50 +443,63 @@ const App = () => {
       return;
     }
 
-    // ROTATION HANDLING
+    // Handle rotation
     if (action === "rotating" && selectedElement) {
       const { x1, y1, x2, y2 } = selectedElement;
-
-      // Get the center of the element
       const centerX = (x1 + x2) / 2;
       const centerY = (y1 + y2) / 2;
 
-      // Calculate the angle between the center and the mouse position
+      // Calculate angle between center and current mouse position
       const angle =
         Math.atan2(clientY - centerY, clientX - centerX) * (180 / Math.PI);
 
-      // Update the element's rotation property
+      // Update rotation in the selected element
       const elementsCopy = [...elements];
       elementsCopy[selectedElement.id].rotation = angle;
       setElements(elementsCopy, true);
-
       return;
     }
 
-    // Existing move and resize logic
+    // Existing drawing and resizing logic
     if (action === "drawing") {
       const index = elements.length - 1;
       const { x1, y1 } = elements[index];
       updateElement(index, x1, y1, clientX, clientY, tool);
     } else if (action === "moving") {
-      const { id, x1, x2, y1, y2, type, offsetX, offsetY, rotation } = selectedElement;
-      const width = x2 - x1;
-      const height = y2 - y1;
-      const newX1 = clientX - offsetX;
-      const newY1 = clientY - offsetY;
-    
-      // Adjust for rotation when moving
-      updateElement(id, newX1, newY1, newX1 + width, newY1 + height, type, strokeColor, rotation); // Include rotation
-    
-    
+      if (selectedElement.type === "pencil") {
+        // Moving pencil element
+        const newPoints = selectedElement.points.map((_, index) => ({
+          x: clientX - selectedElement.xOffsets[index],
+          y: clientY - selectedElement.yOffsets[index],
+        }));
+        const elementsCopy = [...elements];
+        elementsCopy[selectedElement.id] = {
+          ...elementsCopy[selectedElement.id],
+          points: newPoints,
+        };
+        setElements(elementsCopy, true);
+      } else {
+        // Moving other elements (e.g., rectangles, lines)
+        const { id, x1, y1, x2, y2, type, offsetX, offsetY, rotation } =
+          selectedElement;
+        const width = x2 - x1;
+        const height = y2 - y1;
+        const newX1 = clientX - offsetX;
+        const newY1 = clientY - offsetY;
+        const options = type === "text" ? { text: selectedElement.text } : {};
+        updateElement(id, newX1, newY1, newX1 + width, newY1 + height, type, {
+          ...options,
+          rotation,
+        });
+      }
     } else if (action === "resizing") {
+      // Resizing logic
       const { id, type, position, ...coordinates } = selectedElement;
       const { x1, y1, x2, y2 } = resizedCoordinates(
         clientX,
         clientY,
         position,
-        coordinates,
-        selectedElement.rotation
+        coordinates
       );
       updateElement(id, x1, y1, x2, y2, type);
     }
