@@ -268,8 +268,17 @@ const App = () => {
         const stroke = getSvgPathFromStroke(
           getStroke(element.points, { size: element.strokeWidth })
         );
-        context.fill(new Path2D(stroke));
+        const path = new Path2D(stroke);
+
+        context.fillStyle = element.strokeColor; // Set fill color to the same as stroke color
+        context.strokeStyle = element.strokeColor; // Set stroke color
+        context.lineWidth = element.strokeWidth; // Set line width
+
+        context.fill(path); // Fill the path with the stroke color
+        context.stroke(path); // Stroke the path
+
         break;
+
       default:
         throw new Error(`Type not recognised: ${element.type}`);
     }
