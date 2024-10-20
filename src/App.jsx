@@ -157,16 +157,6 @@ const resizedCoordinates = (
 ) => {
   const { x1, y1, x2, y2 } = coordinates;
 
-  // Create a function to rotate the point around the center
-  const rotatePoint = (cx, cy, angle, x, y) => {
-    const rad = (angle * Math.PI) / 180;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-    return {
-      x: cos * (x - cx) - sin * (y - cy) + cx,
-      y: sin * (x - cx) + cos * (y - cy) + cy,
-    };
-  };
 
   // Get the center of the element
   const centerX = (x1 + x2) / 2;
@@ -252,6 +242,7 @@ const App = () => {
 
     if (element.rotation) {
       // Translate to the center of the element
+      console.log("the element has rotation");
       const centerX = (element.x1 + element.x2) / 2;
       const centerY = (element.y1 + element.y2) / 2;
       context.translate(centerX, centerY);
@@ -454,13 +445,14 @@ const App = () => {
 
     // Handle rotation
     if (action === "rotating" && selectedElement) {
-      const { x1, y1, x2, y2 } = selectedElement;
+      const { x1, y1, x2, y2, rotation } = selectedElement;
       const centerX = (x1 + x2) / 2;
       const centerY = (y1 + y2) / 2;
 
       // Calculate angle between center and current mouse position
       const angle =
-        Math.atan2(clientY - centerY, clientX - centerX) * (180 / Math.PI);
+        Math.atan2(clientY - centerY, clientX - centerX) * (180 / Math.PI) +
+        rotation;
 
       // Update rotation in the selected element
       const elementsCopy = [...elements];
@@ -496,13 +488,21 @@ const App = () => {
         const newX1 = clientX - offsetX;
         const newY1 = clientY - offsetY;
         const options = type === "text" ? { text: selectedElement.text } : {};
-        updateElement(id, newX1, newY1, newX1 + width, newY1 + height, type, {
-          ...options,
-          rotation,
-        });
+        updateElement(
+          id,
+          newX1,
+          newY1,
+          newX1 + width,
+          newY1 + height,
+          type,
+          strokeColor,
+          rotation
+        );
       }
     } else if (action === "resizing") {
       // Resizing logic
+      console.log('resizing');
+      
       const { id, type, position, ...coordinates } = selectedElement;
       const { x1, y1, x2, y2 } = resizedCoordinates(
         clientX,
@@ -510,7 +510,7 @@ const App = () => {
         position,
         coordinates
       );
-      updateElement(id, x1, y1, x2, y2, type);
+      updateElement(id, x1, y1, x2, y2, type, strokeColor, selectedElement.rotation);
     }
   };
 
