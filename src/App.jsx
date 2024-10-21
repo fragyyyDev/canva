@@ -16,12 +16,22 @@ const createElement = (
   rotation = 0
 ) => {
   switch (type) {
+    case "ellipse":
     case "line":
     case "rectangle":
-      const roughElement =
-        type === "line"
-          ? generator.line(x1, y1, x2, y2)
-          : generator.rectangle(x1, y1, x2 - x1, y2 - y1);
+      let roughElement;
+      if (type === "line") {
+        roughElement = generator.line(x1, y1, x2, y2);
+      } else if (type === "rectangle") {
+        roughElement = generator.rectangle(x1, y1, x2 - x1, y2 - y1);
+      } else if (type === "ellipse") {
+        const centerX = (x1 + x2) / 2;
+        const centerY = (y1 + y2) / 2;
+        const width = Math.abs(x2 - x1);
+        const height = Math.abs(y2 - y1);
+        roughElement = generator.ellipse(centerX, centerY, width, height);
+      }
+
       return {
         id,
         x1,
@@ -32,13 +42,22 @@ const createElement = (
         roughElement,
         strokeWidth,
         strokeColor,
-        rotation, // Add rotation property
+        rotation, // Include rotation if needed for all shapes
       };
     case "pencil":
       return { id, type, points: [{ x: x1, y: y1 }], strokeWidth, strokeColor };
     default:
       throw new Error(`Type not recognised: ${type}`);
   }
+};
+
+const rotatePoint = (x, y, centerX, centerY, angle) => {
+  const radians = (Math.PI / 180) * angle;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const nx = cos * (x - centerX) - sin * (y - centerY) + centerX;
+  const ny = sin * (x - centerX) + cos * (y - centerY) + centerY;
+  return { x: nx, y: ny };
 };
 
 const nearPoint = (x, y, x1, y1, name) => {
@@ -53,39 +72,123 @@ const onLine = (x1, y1, x2, y2, x, y, maxDistance = 1) => {
   return Math.abs(offset) < maxDistance ? "inside" : null;
 };
 
+// Function to check if a point is inside a rotated rectangle
+const pointInRotatedRectangle = (
+  px,
+  py,
+  topLeft,
+  topRight,
+  bottomRight,
+  bottomLeft
+) => {
+  // Use the cross product to determine if the point is inside the quadrilateral
+  const isPointInTriangle = (p, v1, v2, v3) => {
+    const sign = (p1, p2, p3) =>
+      (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+    const d1 = sign(p, v1, v2);
+    const d2 = sign(p, v2, v3);
+    const d3 = sign(p, v3, v1);
+    const hasNeg = d1 < 0 || d2 < 0 || d3 < 0;
+    const hasPos = d1 > 0 || d2 > 0 || d3 > 0;
+    return !(hasNeg && hasPos);
+  };
+
+  const point = { x: px, y: py };
+  // Check if the point is inside either of the two triangles making up the rectangle
+  return (
+    isPointInTriangle(point, topLeft, topRight, bottomRight) ||
+    isPointInTriangle(point, topLeft, bottomRight, bottomLeft)
+  );
+};
+
 const positionWithinElement = (x, y, element) => {
-  const { type, x1, x2, y1, y2 } = element;
+  const { type, x1, x2, y1, y2, rotation = 0 } = element;
+
   switch (type) {
     case "line":
       const on = onLine(x1, y1, x2, y2, x, y);
       const start = nearPoint(x, y, x1, y1, "start");
       const end = nearPoint(x, y, x2, y2, "end");
       return start || end || on;
+
     case "rectangle":
-      // Resize handles (same as before)
-      const topLeft = nearPoint(x, y, x1, y1, "tl");
-      const topRight = nearPoint(x, y, x2, y1, "tr");
-      const bottomLeft = nearPoint(x, y, x1, y2, "bl");
-      const bottomRight = nearPoint(x, y, x2, y2, "br");
+      // Calculate the center of the rectangle
+      const centerX = (x1 + x2) / 2;
+      const centerY = (y1 + y2) / 2;
 
-      // Rotation handles placed slightly outside corners
-      const rotateTopRight = nearPoint(x, y, x2 + 5, y1 - 5, "rotate-tr");
-      const rotateBottomLeft = nearPoint(x, y, x1 - 5, y2 + 5, "rotate-bl");
-      const rotateBottomRight = nearPoint(x, y, x2 + 5, y2 + 5, "rotate-br");
-      const rotateTopLeft = nearPoint(x, y, x1 - 5, y1 - 5, "rotate-tl");
+      // Rotate each corner point
+      const topLeft = rotatePoint(x1, y1, centerX, centerY, rotation);
+      const topRight = rotatePoint(x2, y1, centerX, centerY, rotation);
+      const bottomLeft = rotatePoint(x1, y2, centerX, centerY, rotation);
+      const bottomRight = rotatePoint(x2, y2, centerX, centerY, rotation);
 
-      const inside = x >= x1 && x <= x2 && y >= y1 && y <= y2 ? "inside" : null;
+      // Check if the point is near any of the corners (resize handles)
+      const nearTopLeft = nearPoint(x, y, topLeft.x, topLeft.y, "tl");
+      const nearTopRight = nearPoint(x, y, topRight.x, topRight.y, "tr");
+      const nearBottomLeft = nearPoint(x, y, bottomLeft.x, bottomLeft.y, "bl");
+      const nearBottomRight = nearPoint(
+        x,
+        y,
+        bottomRight.x,
+        bottomRight.y,
+        "br"
+      );
+
+      // Check if the point is near any of the rotation handles
+      const rotateTopLeft = nearPoint(
+        x,
+        y,
+        topLeft.x - 5,
+        topLeft.y - 5,
+        "rotate-tl"
+      );
+      const rotateTopRight = nearPoint(
+        x,
+        y,
+        topRight.x + 5,
+        topRight.y - 5,
+        "rotate-tr"
+      );
+      const rotateBottomLeft = nearPoint(
+        x,
+        y,
+        bottomLeft.x - 5,
+        bottomLeft.y + 5,
+        "rotate-bl"
+      );
+      const rotateBottomRight = nearPoint(
+        x,
+        y,
+        bottomRight.x + 5,
+        bottomRight.y + 5,
+        "rotate-br"
+      );
+
+      // Check if the point is inside the rotated rectangle
+      const inside = pointInRotatedRectangle(
+        x,
+        y,
+        topLeft,
+        topRight,
+        bottomRight,
+        bottomLeft
+      )
+        ? "inside"
+        : null;
+
+      // Return the closest matching position
       return (
-        topLeft ||
-        topRight ||
-        bottomLeft ||
-        bottomRight ||
+        nearTopLeft ||
+        nearTopRight ||
+        nearBottomLeft ||
+        nearBottomRight ||
+        rotateTopLeft ||
         rotateTopRight ||
         rotateBottomLeft ||
         rotateBottomRight ||
-        rotateTopLeft ||
         inside
       );
+
     case "pencil":
       const betweenAnyPoint = element.points.some((point, index) => {
         const nextPoint = element.points[index + 1];
@@ -95,8 +198,47 @@ const positionWithinElement = (x, y, element) => {
         );
       });
       return betweenAnyPoint ? "inside" : null;
+
+    case "ellipse":
+      // Calculate the center of the ellipse
+      const ellipseCenterX = (x1 + x2) / 2;
+      const ellipseCenterY = (y1 + y2) / 2;
+
+      // Calculate the radii
+      const radiusX = Math.abs(x2 - x1) / 2;
+      const radiusY = Math.abs(y2 - y1) / 2;
+
+      // Rotate the point around the center
+      const rotatedPoint = rotatePoint(
+        x,
+        y,
+        ellipseCenterX,
+        ellipseCenterY,
+        -rotation
+      );
+
+      // Check if the point is inside the ellipse
+      const normalizedX = (rotatedPoint.x - ellipseCenterX) / radiusX;
+      const normalizedY = (rotatedPoint.y - ellipseCenterY) / radiusY;
+      const isInsideEllipse =
+        normalizedX * normalizedX + normalizedY * normalizedY <= 1;
+
+      // Check if the point is near the resize handles
+      const nearLeft = nearPoint(x, y, x1, ellipseCenterY, "left");
+      const nearRight = nearPoint(x, y, x2, ellipseCenterY, "right");
+      const nearTop = nearPoint(x, y, ellipseCenterX, y1, "top");
+      const nearBottom = nearPoint(x, y, ellipseCenterX, y2, "bottom");
+
+      // Return the closest matching position
+      return (
+        nearLeft ||
+        nearRight ||
+        nearTop ||
+        nearBottom ||
+        (isInsideEllipse ? "inside" : null)
+      );
     default:
-      throw new Error(`Type not recognised: ${type}`);
+      throw new Error(`Type not recognized: ${type}`);
   }
 };
 
@@ -156,26 +298,56 @@ const resizedCoordinates = (
   rotation = 0
 ) => {
   const { x1, y1, x2, y2 } = coordinates;
-
-
-  // Get the center of the element
   const centerX = (x1 + x2) / 2;
   const centerY = (y1 + y2) / 2;
+
+  // Rotate the client coordinates back to the original axis-aligned coordinates
+  const { x: rotatedClientX, y: rotatedClientY } = rotatePoint(
+    clientX,
+    clientY,
+    centerX,
+    centerY,
+    -rotation
+  );
+
+  let newX1 = x1,
+    newY1 = y1,
+    newX2 = x2,
+    newY2 = y2;
 
   switch (position) {
     case "tl":
     case "start":
-      return { x1: clientX, y1: clientY, x2, y2 };
+      newX1 = rotatedClientX;
+      newY1 = rotatedClientY;
+      break;
     case "tr":
-      return { x1, y1: clientY, x2: clientX, y2 };
+      newX2 = rotatedClientX;
+      newY1 = rotatedClientY;
+      break;
     case "bl":
-      return { x1: clientX, y1, x2, y2: clientY };
+      newX1 = rotatedClientX;
+      newY2 = rotatedClientY;
+      break;
     case "br":
     case "end":
-      return { x1, y1, x2: clientX, y2: clientY };
+      newX2 = rotatedClientX;
+      newY2 = rotatedClientY;
+      break;
     default:
-      return null; //should not really get here...
+      return null;
   }
+
+  // Rotate the updated corners back to the rotated coordinate space
+  const newTopLeft = rotatePoint(newX1, newY1, centerX, centerY, rotation);
+  const newBottomRight = rotatePoint(newX2, newY2, centerX, centerY, rotation);
+
+  return {
+    x1: newTopLeft.x,
+    y1: newTopLeft.y,
+    x2: newBottomRight.x,
+    y2: newBottomRight.y,
+  };
 };
 
 const useHistory = (initialState) => {
@@ -251,6 +423,7 @@ const App = () => {
     }
 
     switch (element.type) {
+      case "ellipse":
       case "line":
       case "rectangle":
         roughCanvas.draw(element.roughElement);
@@ -323,6 +496,7 @@ const App = () => {
     const elementsCopy = [...elements];
 
     switch (type) {
+      case "ellipse":
       case "line":
       case "rectangle":
         elementsCopy[id] = createElement(
@@ -501,29 +675,41 @@ const App = () => {
       }
     } else if (action === "resizing") {
       // Resizing logic
-      console.log('resizing');
-      
-      const { id, type, position, ...coordinates } = selectedElement;
+      const { id, type, position, rotation, ...coordinates } = selectedElement;
+
+      // Pass rotation to the resizedCoordinates function
       const { x1, y1, x2, y2 } = resizedCoordinates(
         clientX,
         clientY,
         position,
-        coordinates
+        coordinates,
+        rotation
       );
-      updateElement(id, x1, y1, x2, y2, type, strokeColor, selectedElement.rotation);
+
+      // Update the element with the new coordinates and rotation
+      updateElement(
+        id,
+        x1,
+        y1,
+        x2,
+        y2,
+        type,
+        strokeColor,
+        rotation // Ensure rotation is passed to updateElement
+      );
     }
   };
 
   const handleMouseUp = () => {
     if (selectedElement) {
       const index = selectedElement.id;
-      const { id, type } = elements[index];
+      const { id, type, rotation } = elements[index]; // Include rotation here
       if (
         (action === "drawing" || action === "resizing") &&
         adjustmentRequired(type)
       ) {
         const { x1, y1, x2, y2 } = adjustElementCoordinates(elements[index]);
-        updateElement(id, x1, y1, x2, y2, type);
+        updateElement(id, x1, y1, x2, y2, type, strokeColor, rotation); // Pass rotation
       }
     }
 
@@ -612,6 +798,18 @@ const App = () => {
           onClick={() => setTool("drag")}
         >
           Drag
+        </button>
+
+        <button
+          id="ellipse"
+          className={`px-4 py-2 rounded-2xl ${
+            tool === "ellipse"
+              ? "bg-blue-500 hover:bg-blue-500 text-white"
+              : "bg-gray-300"
+          } hover:bg-blue-300`}
+          onClick={() => setTool("ellipse")}
+        >
+          Ellipse
         </button>
       </div>
 
