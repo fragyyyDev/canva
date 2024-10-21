@@ -632,7 +632,7 @@ const App = () => {
         </div>
       )}
 
-      <div className="fixed bottom-0 p-6 flex gap-4">
+      <div className="fixed bottom-0 p-6 flex gap-4 z-40">
         <button
           onClick={undo}
           className="p-3 bg-[#575757] rounded-2xl text-white w-32"
