@@ -101,158 +101,8 @@ const pointInRotatedRectangle = (
   );
 };
 
-const positionWithinElement = (x, y, element) => {
-  const { type, x1, x2, y1, y2, rotation = 0 } = element;
-
-  switch (type) {
-    case "line":
-      const on = onLine(x1, y1, x2, y2, x, y);
-      const start = nearPoint(x, y, x1, y1, "start");
-      const end = nearPoint(x, y, x2, y2, "end");
-      return start || end || on;
-
-    case "rectangle":
-      // Calculate the center of the rectangle
-      const centerX = (x1 + x2) / 2;
-      const centerY = (y1 + y2) / 2;
-
-      // Rotate each corner point
-      const topLeft = rotatePoint(x1, y1, centerX, centerY, rotation);
-      const topRight = rotatePoint(x2, y1, centerX, centerY, rotation);
-      const bottomLeft = rotatePoint(x1, y2, centerX, centerY, rotation);
-      const bottomRight = rotatePoint(x2, y2, centerX, centerY, rotation);
-
-      // Check if the point is near any of the corners (resize handles)
-      const nearTopLeft = nearPoint(x, y, topLeft.x, topLeft.y, "tl");
-      const nearTopRight = nearPoint(x, y, topRight.x, topRight.y, "tr");
-      const nearBottomLeft = nearPoint(x, y, bottomLeft.x, bottomLeft.y, "bl");
-      const nearBottomRight = nearPoint(
-        x,
-        y,
-        bottomRight.x,
-        bottomRight.y,
-        "br"
-      );
-
-      // Check if the point is near any of the rotation handles
-      const rotateTopLeft = nearPoint(
-        x,
-        y,
-        topLeft.x - 5,
-        topLeft.y - 5,
-        "rotate-tl"
-      );
-      const rotateTopRight = nearPoint(
-        x,
-        y,
-        topRight.x + 5,
-        topRight.y - 5,
-        "rotate-tr"
-      );
-      const rotateBottomLeft = nearPoint(
-        x,
-        y,
-        bottomLeft.x - 5,
-        bottomLeft.y + 5,
-        "rotate-bl"
-      );
-      const rotateBottomRight = nearPoint(
-        x,
-        y,
-        bottomRight.x + 5,
-        bottomRight.y + 5,
-        "rotate-br"
-      );
-
-      // Check if the point is inside the rotated rectangle
-      const inside = pointInRotatedRectangle(
-        x,
-        y,
-        topLeft,
-        topRight,
-        bottomRight,
-        bottomLeft
-      )
-        ? "inside"
-        : null;
-
-      // Return the closest matching position
-      return (
-        nearTopLeft ||
-        nearTopRight ||
-        nearBottomLeft ||
-        nearBottomRight ||
-        rotateTopLeft ||
-        rotateTopRight ||
-        rotateBottomLeft ||
-        rotateBottomRight ||
-        inside
-      );
-
-    case "pencil":
-      const betweenAnyPoint = element.points.some((point, index) => {
-        const nextPoint = element.points[index + 1];
-        if (!nextPoint) return false;
-        return (
-          onLine(point.x, point.y, nextPoint.x, nextPoint.y, x, y, 5) != null
-        );
-      });
-      return betweenAnyPoint ? "inside" : null;
-
-    case "ellipse":
-      // Calculate the center of the ellipse
-      const ellipseCenterX = (x1 + x2) / 2;
-      const ellipseCenterY = (y1 + y2) / 2;
-
-      // Calculate the radii
-      const radiusX = Math.abs(x2 - x1) / 2;
-      const radiusY = Math.abs(y2 - y1) / 2;
-
-      // Rotate the point around the center
-      const rotatedPoint = rotatePoint(
-        x,
-        y,
-        ellipseCenterX,
-        ellipseCenterY,
-        -rotation
-      );
-
-      // Check if the point is inside the ellipse
-      const normalizedX = (rotatedPoint.x - ellipseCenterX) / radiusX;
-      const normalizedY = (rotatedPoint.y - ellipseCenterY) / radiusY;
-      const isInsideEllipse =
-        normalizedX * normalizedX + normalizedY * normalizedY <= 1;
-
-      // Check if the point is near the resize handles
-      const nearLeft = nearPoint(x, y, x1, ellipseCenterY, "left");
-      const nearRight = nearPoint(x, y, x2, ellipseCenterY, "right");
-      const nearTop = nearPoint(x, y, ellipseCenterX, y1, "top");
-      const nearBottom = nearPoint(x, y, ellipseCenterX, y2, "bottom");
-
-      // Return the closest matching position
-      return (
-        nearLeft ||
-        nearRight ||
-        nearTop ||
-        nearBottom ||
-        (isInsideEllipse ? "inside" : null)
-      );
-    default:
-      throw new Error(`Type not recognized: ${type}`);
-  }
-};
-
 const distance = (a, b) =>
   Math.sqrt(Math.pow(a.x - b.x, 2) + Math.pow(a.y - b.y, 2));
-
-const getElementAtPosition = (x, y, elements) => {
-  return elements
-    .map((element) => ({
-      ...element,
-      position: positionWithinElement(x, y, element),
-    }))
-    .find((element) => element.position !== null);
-};
 
 const adjustElementCoordinates = (element) => {
   const { type, x1, y1, x2, y2 } = element;
@@ -408,6 +258,192 @@ const App = () => {
   const [canvas, setCanvas] = useState(null);
   const [context, setContext] = useState(null);
   const [roughCanvas, setRoughCanvas] = useState(null);
+
+  const positionWithinElement = (x, y, element) => {
+    const { type, x1, x2, y1, y2, rotation = 0 } = element;
+
+    switch (type) {
+      case "line":
+        const on = onLine(x1, y1, x2, y2, x, y);
+        const start = nearPoint(x, y, x1, y1, "start");
+        const end = nearPoint(x, y, x2, y2, "end");
+        return start || end || on;
+
+      case "rectangle":
+        // Calculate the center of the rectangle
+        const centerX = (x1 + x2) / 2;
+        const centerY = (y1 + y2) / 2;
+
+        // Rotate each corner point
+        const topLeft = rotatePoint(x1, y1, centerX, centerY, rotation);
+        const topRight = rotatePoint(x2, y1, centerX, centerY, rotation);
+        const bottomLeft = rotatePoint(x1, y2, centerX, centerY, rotation);
+        const bottomRight = rotatePoint(x2, y2, centerX, centerY, rotation);
+
+        // Check if the point is near any of the corners (resize handles)
+        const nearTopLeft = nearPoint(x, y, topLeft.x, topLeft.y, "tl");
+        const nearTopRight = nearPoint(x, y, topRight.x, topRight.y, "tr");
+        const nearBottomLeft = nearPoint(
+          x,
+          y,
+          bottomLeft.x,
+          bottomLeft.y,
+          "bl"
+        );
+        const nearBottomRight = nearPoint(
+          x,
+          y,
+          bottomRight.x,
+          bottomRight.y,
+          "br"
+        );
+
+        // Check if the point is near any of the rotation handles
+        const rotateTopLeft = nearPoint(
+          x,
+          y,
+          topLeft.x - 5,
+          topLeft.y - 5,
+          "rotate-tl"
+        );
+        const rotateTopRight = nearPoint(
+          x,
+          y,
+          topRight.x + 5,
+          topRight.y - 5,
+          "rotate-tr"
+        );
+        const rotateBottomLeft = nearPoint(
+          x,
+          y,
+          bottomLeft.x - 5,
+          bottomLeft.y + 5,
+          "rotate-bl"
+        );
+        const rotateBottomRight = nearPoint(
+          x,
+          y,
+          bottomRight.x + 5,
+          bottomRight.y + 5,
+          "rotate-br"
+        );
+
+        // Check if the point is inside the rotated rectangle
+        const inside = pointInRotatedRectangle(
+          x,
+          y,
+          topLeft,
+          topRight,
+          bottomRight,
+          bottomLeft
+        )
+          ? "inside"
+          : null;
+
+        // Return the closest matching position
+        return (
+          nearTopLeft ||
+          nearTopRight ||
+          nearBottomLeft ||
+          nearBottomRight ||
+          rotateTopLeft ||
+          rotateTopRight ||
+          rotateBottomLeft ||
+          rotateBottomRight ||
+          inside
+        );
+
+      case "pencil":
+        const betweenAnyPoint = element.points.some((point, index) => {
+          const nextPoint = element.points[index + 1];
+          if (!nextPoint) return false;
+          return (
+            onLine(point.x, point.y, nextPoint.x, nextPoint.y, x, y, 5) != null
+          );
+        });
+        return betweenAnyPoint ? "inside" : null;
+
+      case "ellipse":
+        // Calculate the center of the ellipse
+        const ellipseCenterX = (x1 + x2) / 2;
+        const ellipseCenterY = (y1 + y2) / 2;
+
+        // Calculate the radii
+        const radiusX = Math.abs(x2 - x1) / 2;
+        const radiusY = Math.abs(y2 - y1) / 2;
+
+        // Rotate the point around the center
+        const rotatedPoint = rotatePoint(
+          x,
+          y,
+          ellipseCenterX,
+          ellipseCenterY,
+          -rotation
+        );
+
+        // Check if the point is inside the ellipse
+        const normalizedX = (rotatedPoint.x - ellipseCenterX) / radiusX;
+        const normalizedY = (rotatedPoint.y - ellipseCenterY) / radiusY;
+        const isInsideEllipse =
+          normalizedX * normalizedX + normalizedY * normalizedY <= 1;
+
+        // Calculate the bounding box for the ellipse
+        const boundingBoxLeft = ellipseCenterX - radiusX;
+        const boundingBoxRight = ellipseCenterX + radiusX;
+        const boundingBoxTop = ellipseCenterY - radiusY;
+        const boundingBoxBottom = ellipseCenterY + radiusY;
+
+        // Check if the point is near the bounding box corners (resize handles)
+        const nearTopLeftCorner = nearPoint(
+          x,
+          y,
+          boundingBoxLeft,
+          boundingBoxTop,
+          "tl"
+        );
+        const nearTopRightCorner = nearPoint(
+          x,
+          y,
+          boundingBoxRight,
+          boundingBoxTop,
+          "tr"
+        );
+        const nearBottomLeftCorner = nearPoint(
+          x,
+          y,
+          boundingBoxLeft,
+          boundingBoxBottom,
+          "bl"
+        );
+        const nearBottomRightCorner = nearPoint(
+          x,
+          y,
+          boundingBoxRight,
+          boundingBoxBottom,
+          "br"
+        );
+
+        // Return the closest matching position
+        return (
+          nearTopLeftCorner ||
+          nearTopRightCorner ||
+          nearBottomLeftCorner ||
+          nearBottomRightCorner ||
+          (isInsideEllipse ? "inside" : null)
+        );
+      default:
+        throw new Error(`Type not recognized: ${type}`);
+    }
+  };
+
+  const getElementAtPosition = (x, y, elements) => {
+    return elements
+      .map((element) => ({
+        ...element,
+        position: positionWithinElement(x, y, element),
+      }))
+      .find((element) => element.position !== null);
+  };
 
   const drawElement = (roughCanvas, context, element) => {
     context.save();
