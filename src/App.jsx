@@ -55,9 +55,37 @@ const rotatePoint = (x, y, centerX, centerY, angle) => {
   const radians = (Math.PI / 180) * angle;
   const cos = Math.cos(radians);
   const sin = Math.sin(radians);
-  const nx = cos * (x - centerX) - sin * (y - centerY) + centerX;
-  const ny = sin * (x - centerX) + cos * (y - centerY) + centerY;
-  return { x: nx, y: ny };
+  const dx = x - centerX;
+  const dy = y - centerY;
+
+  return {
+    x: centerX + dx * cos - dy * sin,
+    y: centerY + dx * sin + dy * cos,
+  };
+};
+
+const createOrUpdateClickableDiv = (x, y, id, className = "") => {
+  let div = document.getElementById(id);
+
+  if (!div) {
+    div = document.createElement("div");
+    div.id = id;
+    div.className = `w-3 h-3 rounded-full cursor-pointer clickable-point ${className}`;
+    document.body.appendChild(div);
+  }
+
+  // Update position
+  div.style.position = "absolute";
+  div.style.left = `${x - 6}px`; // Adjust for size
+  div.style.top = `${y - 6}px`; // Adjust for size
+};
+
+const calculateRotationHandle = (cornerPoint, centerX, centerY, distance) => {
+  const angle = Math.atan2(cornerPoint.y - centerY, cornerPoint.x - centerX);
+  return {
+    x: cornerPoint.x + Math.cos(angle) * distance,
+    y: cornerPoint.y + Math.sin(angle) * distance,
+  };
 };
 
 const nearPoint = (x, y, x1, y1, name) => {
@@ -280,6 +308,79 @@ const App = () => {
         const bottomLeft = rotatePoint(x1, y2, centerX, centerY, rotation);
         const bottomRight = rotatePoint(x2, y2, centerX, centerY, rotation);
 
+        // Apply an offset for the rotation handles (distance outside the rectangle)
+        const rotateHandleDistance = 30; // Larger distance for rotation handles to stay outside
+        const rotateTopLeft = calculateRotationHandle(
+          topLeft,
+          centerX,
+          centerY,
+          rotateHandleDistance
+        );
+        const rotateTopRight = calculateRotationHandle(
+          topRight,
+          centerX,
+          centerY,
+          rotateHandleDistance
+        );
+        const rotateBottomLeft = calculateRotationHandle(
+          bottomLeft,
+          centerX,
+          centerY,
+          rotateHandleDistance
+        );
+        const rotateBottomRight = calculateRotationHandle(
+          bottomRight,
+          centerX,
+          centerY,
+          rotateHandleDistance
+        );
+
+        // === DRAWING VISIBLE HANDLES ===
+
+        // Draw 4 resize handles at the corners using the same names used in the logic
+        createOrUpdateClickableDiv(topLeft.x, topLeft.y, "tl", "bg-blue-500");
+        createOrUpdateClickableDiv(topRight.x, topRight.y, "tr", "bg-blue-500");
+        createOrUpdateClickableDiv(
+          bottomLeft.x,
+          bottomLeft.y,
+          "bl",
+          "bg-blue-500"
+        );
+        createOrUpdateClickableDiv(
+          bottomRight.x,
+          bottomRight.y,
+          "br",
+          "bg-blue-500"
+        );
+
+        // Draw 4 rotation handles further outside the corners
+        createOrUpdateClickableDiv(
+          rotateTopLeft.x,
+          rotateTopLeft.y,
+          "rotate-tl",
+          "bg-red-500"
+        );
+        createOrUpdateClickableDiv(
+          rotateTopRight.x,
+          rotateTopRight.y,
+          "rotate-tr",
+          "bg-red-500"
+        );
+        createOrUpdateClickableDiv(
+          rotateBottomLeft.x,
+          rotateBottomLeft.y,
+          "rotate-bl",
+          "bg-red-500"
+        );
+        createOrUpdateClickableDiv(
+          rotateBottomRight.x,
+          rotateBottomRight.y,
+          "rotate-br",
+          "bg-red-500"
+        );
+
+        // === RESIZING & ROTATION LOGIC ===
+
         // Check if the point is near any of the corners (resize handles)
         const nearTopLeft = nearPoint(x, y, topLeft.x, topLeft.y, "tl");
         const nearTopRight = nearPoint(x, y, topRight.x, topRight.y, "tr");
@@ -299,32 +400,32 @@ const App = () => {
         );
 
         // Check if the point is near any of the rotation handles
-        const rotateTopLeft = nearPoint(
+        const nearRotateTopLeft = nearPoint(
           x,
           y,
-          topLeft.x - 5,
-          topLeft.y - 5,
+          rotateTopLeft.x,
+          rotateTopLeft.y,
           "rotate-tl"
         );
-        const rotateTopRight = nearPoint(
+        const nearRotateTopRight = nearPoint(
           x,
           y,
-          topRight.x + 5,
-          topRight.y - 5,
+          rotateTopRight.x,
+          rotateTopRight.y,
           "rotate-tr"
         );
-        const rotateBottomLeft = nearPoint(
+        const nearRotateBottomLeft = nearPoint(
           x,
           y,
-          bottomLeft.x - 5,
-          bottomLeft.y + 5,
+          rotateBottomLeft.x,
+          rotateBottomLeft.y,
           "rotate-bl"
         );
-        const rotateBottomRight = nearPoint(
+        const nearRotateBottomRight = nearPoint(
           x,
           y,
-          bottomRight.x + 5,
-          bottomRight.y + 5,
+          rotateBottomRight.x,
+          rotateBottomRight.y,
           "rotate-br"
         );
 
@@ -346,10 +447,10 @@ const App = () => {
           nearTopRight ||
           nearBottomLeft ||
           nearBottomRight ||
-          rotateTopLeft ||
-          rotateTopRight ||
-          rotateBottomLeft ||
-          rotateBottomRight ||
+          nearRotateTopLeft ||
+          nearRotateTopRight ||
+          nearRotateBottomLeft ||
+          nearRotateBottomRight ||
           inside
         );
 
@@ -713,14 +814,28 @@ const App = () => {
       // Resizing logic
       const { id, type, position, rotation, ...coordinates } = selectedElement;
 
+      // Ensure all necessary parameters are available
+      if (!clientX || !clientY || !position || !coordinates) {
+        console.error("Missing necessary parameters for resizing.");
+        return;
+      }
+
       // Pass rotation to the resizedCoordinates function
-      const { x1, y1, x2, y2 } = resizedCoordinates(
+      const resizedCoords = resizedCoordinates(
         clientX,
         clientY,
         position,
         coordinates,
         rotation
       );
+
+      // Check if resizedCoords is valid
+      if (!resizedCoords) {
+        console.error("Failed to calculate resized coordinates.");
+        return; // Early exit to avoid further issues
+      }
+
+      const { x1, y1, x2, y2 } = resizedCoords;
 
       // Update the element with the new coordinates and rotation
       updateElement(
